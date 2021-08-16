@@ -1,6 +1,7 @@
 package core;
 
 import message.Message;
+import message.MessageExt;
 import message.MessageExtBatch;
 import message.MessageExtBrokerInner;
 import result.*;
@@ -9,6 +10,7 @@ import store.MappedFileQueue;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
@@ -89,17 +91,19 @@ public class CommitLog {
         PutMessageResult putMessageResult = new PutMessageResult(PutMessageStatus.PUT_OK, result);
 
         //刷新数据到磁盘
-        handleDiskFlush();
-
+        handleDiskFlush(result,putMessageResult,msg);
 
         return putMessageResult;
     }
-    public void handleDiskFlush(){
+    public void handleDiskFlush(AppendMessageResult result, PutMessageResult putMessageResult, MessageExt messageExt){
 
         //根据业务场景需要，选择异步刷新磁盘还是同步刷新
 
         //同步
         if(FlushDiskType.SYNC_FLUSH == MessageStoreConfig.getFlushDiskType()){
+            final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
+            GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes());
+            service.putRequest(request);
 
         }else{//异步
             //服务在处理刷盘之前是被阻塞的
@@ -152,6 +156,11 @@ public class CommitLog {
 //        );
     }
 
+
+    /**
+     * 刷盘服务不管是异步还是同步，最终是要把数据刷新到mappedFileQueue
+     * 调用其flush方法-mappedFile.flush->mappedBuffer.force
+     */
     abstract class FlushCommitLogService extends ServiceThread {
         protected static final int RETRY_TIMES_OVER = 10;
     }
@@ -160,7 +169,7 @@ public class CommitLog {
 
         @Override
         public String getServiceName() {
-            return null;
+            return CommitRealTimeService.class.getSimpleName();
         }
 
         @Override
@@ -169,11 +178,14 @@ public class CommitLog {
         }
     }
 
+    /**
+     * 同步刷新
+     */
     class FlushRealTimeService extends FlushCommitLogService{
 
         @Override
         public String getServiceName() {
-            return FlushRealTimeService.class.getName();
+            return FlushRealTimeService.class.getSimpleName();
         }
 
         @Override
@@ -187,14 +199,35 @@ public class CommitLog {
      */
     class GroupCommitService extends FlushCommitLogService{
 
+        private volatile List<GroupCommitRequest> requestsWrite = new ArrayList<GroupCommitRequest>();
+        private volatile List<GroupCommitRequest> requestsRead = new ArrayList<GroupCommitRequest>();
+
+        public synchronized void putRequest(final GroupCommitRequest request) {
+            synchronized (this.requestsWrite) {
+                this.requestsWrite.add(request);
+            }
+            this.wakeup();
+        }
+
         @Override
         public String getServiceName() {
-            return null;
+            return GroupCommitService.class.getSimpleName();
+        }
+
+        private void doCommit(){
+
         }
 
         @Override
         public void run() {
 
+        }
+    }
+    public static class GroupCommitRequest {
+        private final long nextOffset;
+
+        public GroupCommitRequest(long nextOffset) {
+            this.nextOffset = nextOffset;
         }
     }
 
