@@ -1,0 +1,2 @@
+# rocketstore
+这是rocketmq存储简单实现，主要为了加深理解rokectmq的存储模块
