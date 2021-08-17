@@ -3,6 +3,7 @@ package message;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -17,4 +18,15 @@ public class Message implements Serializable {
      */
     private Map<String, String> properties;
     private byte[] body;
+
+    public String getTags() {
+        return this.getProperty("TAGS");
+    }
+    public String getProperty(final String name) {
+        if (null == this.properties) {
+            this.properties = new HashMap<String, String>();
+        }
+
+        return this.properties.get(name);
+    }
 }

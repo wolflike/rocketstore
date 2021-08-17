@@ -7,12 +7,13 @@ import lombok.Data;
  */
 @Data
 public class PutMessageResult {
-    private PutMessageStatus status;
+    private PutMessageStatus putMessageStatus;
 
     private AppendMessageResult appendMessageResult;
 
     public PutMessageResult(PutMessageStatus status, AppendMessageResult appendMessageResult) {
-        this.status = status;
+        this.putMessageStatus = status;
         this.appendMessageResult = appendMessageResult;
     }
+
 }

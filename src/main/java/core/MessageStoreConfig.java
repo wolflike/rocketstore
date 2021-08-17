@@ -14,6 +14,9 @@ public class MessageStoreConfig {
     private static String storePathConsumeQueue = System.getProperty("user.home") + File.separator + "store"
             + File.separator + "consumequeue";
 
+
+    public static int syncFlushTimeout = 1000 * 5;
+
     private static String topicDefaultGroup = "default";
 
     public static int messageSize = 1024 * 1024 * 4;

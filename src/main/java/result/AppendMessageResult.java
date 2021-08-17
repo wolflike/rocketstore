@@ -11,11 +11,11 @@ public class AppendMessageResult {
     private AppendMessageStatus status;
 
     /**
-     * Where to start writing
+     * 将要去写的offset
      */
     private long wroteOffset;
     /**
-     * Write Bytes
+     * 写入的字节数
      */
     private int wroteBytes;
     /**

@@ -17,6 +17,9 @@ public abstract class ServiceThread implements Runnable{
      */
     protected final CountDownLatch waitPoint = new CountDownLatch(1);
     protected volatile AtomicBoolean hasNotified = new AtomicBoolean(false);
+    /**
+     * 用来标记线程是running还是stopped
+     */
     protected volatile boolean stopped = false;
     protected boolean isDaemon = false;
 
@@ -38,11 +41,13 @@ public abstract class ServiceThread implements Runnable{
      * 他才会启动线程，同时设置线程是否为守护线程（有些服务是长时间的，必然要设为守护线程）
      */
     public void start(){
+        //只有线程没有启动的时候，才会启动本线程（也就是说，多次启动，只会启动一次）
         if (!started.compareAndSet(false, true)) {
             return;
         }
         stopped = false;
         this.thread = new Thread(this, getServiceName());
+        //设置为守护线程
         this.thread.setDaemon(isDaemon);
         this.thread.start();
     }
@@ -54,6 +59,7 @@ public abstract class ServiceThread implements Runnable{
     public void shutdown(final boolean interrupt) {
 
         log.info("Try to shutdown service thread:{} started:{} lastThread:{}", getServiceName(), started.get(), thread);
+        //只有当线程是启动的时候才会shutdown
         if (!started.compareAndSet(true, false)) {
             return;
         }
@@ -61,6 +67,7 @@ public abstract class ServiceThread implements Runnable{
         log.info("shutdown thread " + this.getServiceName() + " interrupt " + interrupt);
 
         if (hasNotified.compareAndSet(false, true)) {
+            //数值减1，相当于该线程完成事情了
             waitPoint.countDown(); // notify
         }
 
@@ -80,5 +87,9 @@ public abstract class ServiceThread implements Runnable{
         if (hasNotified.compareAndSet(false, true)) {
             waitPoint.countDown(); // notify
         }
+    }
+
+    public boolean isStopped(){
+        return stopped;
     }
 }

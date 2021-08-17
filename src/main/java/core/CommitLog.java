@@ -1,5 +1,8 @@
 package core;
 
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import message.Message;
 import message.MessageExt;
 import message.MessageExtBatch;
@@ -13,6 +16,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -20,6 +27,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 数据是写到mappedFileQueue中的
  * 多线程共用这一个类，所以肯定是需要锁机制的
  */
+@Slf4j
 public class CommitLog {
     /**
      * Message's MAGIC CODE daa320a7
@@ -81,12 +89,10 @@ public class CommitLog {
         AppendMessageResult result = null;
         putMessageLock.lock();
         try {
-
             result = mappedFile.appendMessage(msg, appendMessageCallback);
         }finally {
             putMessageLock.unlock();
         }
-
         //构建putMessageResult
         PutMessageResult putMessageResult = new PutMessageResult(PutMessageStatus.PUT_OK, result);
 
@@ -98,12 +104,36 @@ public class CommitLog {
     public void handleDiskFlush(AppendMessageResult result, PutMessageResult putMessageResult, MessageExt messageExt){
 
         //根据业务场景需要，选择异步刷新磁盘还是同步刷新
-
+        //刷新的思路是把mappedFile中的byteBuffer数据flush到磁盘去
         //同步
         if(FlushDiskType.SYNC_FLUSH == MessageStoreConfig.getFlushDiskType()){
+
+            //总结来看，同步刷新本质是提交要刷新的位置先扔给队列（list）
+            //线程不断从list取位置，然后给给mappedFileQueue去刷新位置
+            //等处理完了，把状态给flushOKFuture
+            //我们在当前层阻塞等待flushOKFuture的结果
+            //所以可以看到同步刷新用了异步类解决这种异步问题
+            //应该吸收学习
+
             final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
+            //将刷新的位置通知mappedFile
             GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes());
+            //把请求放到list中，service线程会不断从list中拿request做刷新
+            //所以这里是一个异步操作（因为你把数据放到list后，你不知道什么时候能拿到你想要的结果）
             service.putRequest(request);
+            //因为上面的异步操作，所以想获取上面操作返回的参数就必须用CompletableFuture，异步获取数据
+            CompletableFuture<PutMessageStatus> flushOKFuture = request.future();
+            PutMessageStatus flushStatus = null;
+            try {
+                //允许5秒的超时
+                flushStatus = flushOKFuture.get(MessageStoreConfig.syncFlushTimeout, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
+                e.printStackTrace();
+            }
+            if (flushStatus != PutMessageStatus.PUT_OK) {
+                log.error("do group commit, wait for flush failed, topic: " + messageExt.getTopic() + " tags: " + messageExt.getTags());
+                putMessageResult.setPutMessageStatus(PutMessageStatus.FLUSH_DISK_TIMEOUT);
+            }
 
         }else{//异步
             //服务在处理刷盘之前是被阻塞的
@@ -209,25 +239,107 @@ public class CommitLog {
             this.wakeup();
         }
 
+        private void swapRequests() {
+            List<GroupCommitRequest> tmp = this.requestsWrite;
+            this.requestsWrite = this.requestsRead;
+            this.requestsRead = tmp;
+        }
+
         @Override
         public String getServiceName() {
             return GroupCommitService.class.getSimpleName();
         }
 
         private void doCommit(){
+            //这个核心就是刷新磁盘
+            synchronized (this.requestsRead) {
+                if (!this.requestsRead.isEmpty()) {
+                    for (GroupCommitRequest req : this.requestsRead) {
+
+                        //如果说flushedWhere都大于等于nextOffset，那就没必要刷盘了，
+                        boolean flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
+                        // There may be a message in the next file, so a maximum of
+                        // two times the flush
+                        for (int i = 0; i < 2 && !flushOK; i++) {
+                            CommitLog.this.mappedFileQueue.flush(0);
+                            flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
+                        }
+
+
+                        req.wakeupCustomer(flushOK ? PutMessageStatus.PUT_OK : PutMessageStatus.FLUSH_DISK_TIMEOUT);
+                    }
+
+                    long storeTimestamp = CommitLog.this.mappedFileQueue.getStoreTimestamp();
+                    if (storeTimestamp > 0) {
+                        //CommitLog.this.defaultMessageStore.getStoreCheckpoint().setPhysicMsgTimestamp(storeTimestamp);
+                    }
+
+                    this.requestsRead.clear();
+                } else {
+                    // Because of individual messages is set to not sync flush, it
+                    // will come to this process
+                    CommitLog.this.mappedFileQueue.flush(0);
+                }
+            }
 
         }
 
         @Override
         public void run() {
+            CommitLog.log.info(this.getServiceName() + " service started");
+
+            //只有线程是活着的，才可以继续
+            while (!this.isStopped()) {
+                try {
+//                    this.waitForRunning(10);
+                    this.doCommit();
+                } catch (Exception e) {
+                    CommitLog.log.warn(this.getServiceName() + " service has exception. ", e);
+                }
+            }
+
+            // Under normal circumstances shutdown, wait for the arrival of the
+            // request, and then flush
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                CommitLog.log.warn("GroupCommitService Exception, ", e);
+            }
+
+            synchronized (this) {
+                this.swapRequests();
+            }
+
+            this.doCommit();
+
+            CommitLog.log.info(this.getServiceName() + " service end");
 
         }
     }
+    @Getter
+    @Setter
     public static class GroupCommitRequest {
+        /**
+         * 将要刷新到的位置
+         */
         private final long nextOffset;
+
+        /**
+         * 磁盘刷新完成后的状态，异步获取
+         * 也就是说：flushOKFuture里面装的status是等某个任务执行完后，才放进去的
+         * 你可以在其他地方执行get方法，但是获取不到里面的数据，直到任务完成后，才能获取到
+         */
+        private CompletableFuture<PutMessageStatus> flushOKFuture = new CompletableFuture<>();
 
         public GroupCommitRequest(long nextOffset) {
             this.nextOffset = nextOffset;
+        }
+
+        public void wakeupCustomer(final PutMessageStatus putMessageStatus) {
+            this.flushOKFuture.complete(putMessageStatus);
+        }
+        public CompletableFuture<PutMessageStatus> future() {
+            return flushOKFuture;
         }
     }
 
@@ -249,8 +361,10 @@ public class CommitLog {
         @Override
         public AppendMessageResult doAppend(long fileFromOffset, ByteBuffer byteBuffer, int maxBlank, MessageExtBrokerInner msg) {
 
+            //todo maxBlank是用来判断一个文件是否不够写入了
+
             /**
-             * commitLog中数据的物理偏移量
+             * commitLog中数据的物理偏移量（文件偏移量+当前byteBuffer的position）
              */
             long wroteOffset = fileFromOffset + byteBuffer.position();
 
