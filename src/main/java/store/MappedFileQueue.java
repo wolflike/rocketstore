@@ -61,7 +61,9 @@ public class MappedFileQueue {
         MappedFile mappedFile = this.findMappedFileByOffset(this.flushedWhere, this.flushedWhere == 0);
         if (mappedFile != null) {
             long tmpTimeStamp = mappedFile.getStoreTimestamp();
+            //当前mappedFile刷新到的位置
             int offset = mappedFile.flush(flushLeastPages);
+            //加上文件偏移量
             long where = mappedFile.getFileFromOffset() + offset;
             //第一次刷where比flushedWhere大
             //flushedWhere赋值为where

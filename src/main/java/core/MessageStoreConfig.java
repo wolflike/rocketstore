@@ -15,7 +15,7 @@ public class MessageStoreConfig {
             + File.separator + "consumequeue";
 
 
-    public static int syncFlushTimeout = 1000 * 5;
+    public static int syncFlushTimeout = 5_000;
 
     private static String topicDefaultGroup = "default";
 

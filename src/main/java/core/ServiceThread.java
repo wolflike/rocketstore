@@ -3,6 +3,7 @@ package core;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -13,7 +14,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class ServiceThread implements Runnable{
     private Thread thread;
     /**
-     * 发射员
+     * 发射员，主要包括await和countDown
+     * 当线程执行完后可以执行countDown 减1
+     * 另外一个线程执行await，阻塞等待所有线程
+     * 当所有线程都调用了countDown
+     * 那个线程也就可以继续执行了
      */
     protected final CountDownLatch waitPoint = new CountDownLatch(1);
     protected volatile AtomicBoolean hasNotified = new AtomicBoolean(false);
@@ -83,7 +88,12 @@ public abstract class ServiceThread implements Runnable{
 
     }
 
+    /**
+     * 当线程执行完某个动作，count减1
+     */
     public void wakeup() {
+        //hasNotified是用来控制waitPoint的await和countDown
+        //当还没通知的时候，说明要通知了 countDown 减1
         if (hasNotified.compareAndSet(false, true)) {
             waitPoint.countDown(); // notify
         }
@@ -91,5 +101,35 @@ public abstract class ServiceThread implements Runnable{
 
     public boolean isStopped(){
         return stopped;
+    }
+
+
+    /**
+     * 这个方法明显是在等待
+     * 所以这个线程本质就是自己和自己合作
+     * @param interval
+     */
+    protected void waitForRunning(long interval) {
+        //当已通知的时候
+        if (hasNotified.compareAndSet(true, false)) {
+            this.onWaitEnd();
+            return;
+        }
+
+        //entry to wait
+        //todo 需要实现将count数值重置
+        //waitPoint.reset();
+
+        try {
+            waitPoint.await(interval, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            log.error("Interrupted", e);
+        } finally {
+            hasNotified.set(false);
+            this.onWaitEnd();
+        }
+    }
+
+    protected void onWaitEnd() {
     }
 }

@@ -236,6 +236,8 @@ public class CommitLog {
             synchronized (this.requestsWrite) {
                 this.requestsWrite.add(request);
             }
+            //这里就是唤醒了，当提交了request，说明有要刷盘的需求了，所以唤醒该线程
+            //通过countDownLatch来控制
             this.wakeup();
         }
 
@@ -291,7 +293,11 @@ public class CommitLog {
             //只有线程是活着的，才可以继续
             while (!this.isStopped()) {
                 try {
-//                    this.waitForRunning(10);
+                    //这里就是阻塞等待呀，
+                    //只有被唤醒才能继续执行
+                    //很显然必须是其他线程主动去唤醒（wakeup），
+                    //该线程才能被唤醒
+                    this.waitForRunning(10);
                     this.doCommit();
                 } catch (Exception e) {
                     CommitLog.log.warn(this.getServiceName() + " service has exception. ", e);
