@@ -22,6 +22,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 00000000000000000000，代表第二个文件
  * 00000000001073741824，代表第二个文件
  * @author luo
+ *
+ *
+ *
+ * 这里描述一下wrotePostion、commitedPosition、flushedPosition三者之间的关系
+ *
+ * directByteBuffer             |||||||||commitedPosition|||||||||||
+ * mappedByteBuffer             |||||||||                ||               ||wrotePosition|||||||
+ * physicalFile                 |||||||||                ||flushedPosition|||||||||
  */
 @Setter
 @Getter
@@ -35,7 +43,7 @@ public class MappedFile {
      */
     private String fileName;
     /**
-     * 文件的偏移量
+     * 文件的偏移量，文件首地址
      */
     private long fileFromOffset;
     /**
@@ -51,19 +59,28 @@ public class MappedFile {
      * 也是读写文件的工具
      */
     protected FileChannel fileChannel;
+
+    /**
+     * 堆外内存
+     */
     protected ByteBuffer writeBuffer = null;
 
     private final AtomicInteger flushedPosition = new AtomicInteger(0);
+
+    /**
+     * 用于transientStorePool
+     */
+    protected final AtomicInteger committedPosition = new AtomicInteger(0);
+    /**
+     * 已写的位置
+     */
+    protected final AtomicInteger wrotePosition = new AtomicInteger(0);
 
     /**
      * 文件大小
      */
     protected int fileSize;
 
-    /**
-     * 已写的位置
-     */
-    protected final AtomicInteger wrotePosition = new AtomicInteger(0);
 
     /**
      * 存储的时间戳
@@ -103,7 +120,7 @@ public class MappedFile {
     public AppendMessageResult appendMessage(MessageExtBrokerInner msg, AppendMessageCallback callback){
         //写入ByteBuffer的当前位置
         int currentPos = this.wrotePosition.get();
-        //没太理解
+        //有堆外内存，先放堆外内存，没有再用内存映射
         ByteBuffer byteBuffer = writeBuffer != null ? writeBuffer.slice() : this.mappedByteBuffer.slice();
         //从currentPos开始写
         byteBuffer.position(currentPos);

@@ -47,6 +47,7 @@ public class CommitLog {
     protected final DefaultMessageStore defaultMessageStore;
     private final ReentrantLock putMessageLock = new ReentrantLock();
     private final FlushCommitLogService flushCommitLogService;
+    private final CommitRealTimeService commitRealTimeService;
 
     private final AppendMessageCallback appendMessageCallback;
 
@@ -59,6 +60,7 @@ public class CommitLog {
         } else {
             this.flushCommitLogService = new FlushRealTimeService();
         }
+        this.commitRealTimeService = new CommitRealTimeService();
     }
 
     public void start(){
@@ -86,7 +88,7 @@ public class CommitLog {
         //这里就是多个线程根据topic-queueId的维度进行写入数据
 
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
-        AppendMessageResult result = null;
+        AppendMessageResult result;
         putMessageLock.lock();
         try {
             result = mappedFile.appendMessage(msg, appendMessageCallback);
@@ -120,6 +122,7 @@ public class CommitLog {
             GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes());
             //把请求放到list中，service线程会不断从list中拿request做刷新
             //所以这里是一个异步操作（因为你把数据放到list后，你不知道什么时候能拿到你想要的结果）
+            //立马唤醒，刷新
             service.putRequest(request);
             //因为上面的异步操作，所以想获取上面操作返回的参数就必须用CompletableFuture，异步获取数据
             CompletableFuture<PutMessageStatus> flushOKFuture = request.future();
@@ -195,6 +198,10 @@ public class CommitLog {
         protected static final int RETRY_TIMES_OVER = 10;
     }
 
+    /**
+     * 这个类不能刷真正意义上的刷盘，而是把堆外内存的数据提交到内存映射中MappedByteBuffer
+     * 该类也是异步刷新
+     */
     class CommitRealTimeService extends FlushCommitLogService{
 
         @Override
@@ -202,14 +209,27 @@ public class CommitLog {
             return CommitRealTimeService.class.getSimpleName();
         }
 
+        //这里核心逻辑是commit->mappedByteBuffer
+        //todo 逻辑需要补充
         @Override
         public void run() {
+            while (!isStopped()){
+                //todo commit
+                boolean result = mappedFileQueue.commit(MessageStoreConfig.commitCommitLogLeastPages);
 
+                if(!result){
+                    //result = false means some data committed.
+                    //所以需要唤醒刷新线程
+                    flushCommitLogService.wakeup();
+                }
+
+                waitForRunning(MessageStoreConfig.syncCommitTimeout);
+            }
         }
     }
 
     /**
-     * 同步刷新
+     * 异步刷新
      */
     class FlushRealTimeService extends FlushCommitLogService{
 
@@ -220,12 +240,29 @@ public class CommitLog {
 
         @Override
         public void run() {
+            // 如果是实时刷盘，每隔一定时间间隔，
+            // 该线程休眠500毫秒，如果不是实时刷盘，
+            // 则调用waitForRunning，
+            // 即每隔500毫秒或该刷盘服务线程调用了wakeup（）方法之后结束阻塞
+            while (!isStopped()){
+                try {
+                    if(MessageStoreConfig.flushCommitLogTimed){
+                        Thread.sleep(MessageStoreConfig.flushIntervalCommitLog);
+                    }else{
+                        waitForRunning(MessageStoreConfig.flushIntervalCommitLog);
+                    }
+                    //刷盘
+                    mappedFileQueue.flush(MessageStoreConfig.flushCommitLogLeastPages);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
 
+            }
         }
     }
 
     /**
-     * 异步刷新，一组数据一起刷入磁盘
+     * 同步刷新，一组数据一起刷入磁盘
      */
     class GroupCommitService extends FlushCommitLogService{
 

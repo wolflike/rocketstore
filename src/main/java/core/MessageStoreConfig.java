@@ -14,8 +14,23 @@ public class MessageStoreConfig {
     private static String storePathConsumeQueue = System.getProperty("user.home") + File.separator + "store"
             + File.separator + "consumequeue";
 
+    public static int flushIntervalCommitLog = 500;
+
+    public static boolean flushCommitLogTimed = false;
 
     public static int syncFlushTimeout = 5_000;
+
+    public static int syncCommitTimeout = 2_000;
+
+    /**
+     * How many pages are to be flushed when flush CommitLog
+     */
+    public static int flushCommitLogLeastPages = 4;
+
+    /**
+     * How many pages are to be committed when commit data to file
+     */
+    public static int commitCommitLogLeastPages = 4;
 
     private static String topicDefaultGroup = "default";
 

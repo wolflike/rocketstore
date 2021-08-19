@@ -49,6 +49,21 @@ public class MappedFileQueue {
 
         return mappedFileLast;
     }
+    public MappedFile getFirstMappedFile() {
+        MappedFile mappedFileFirst = null;
+
+        if (!this.mappedFiles.isEmpty()) {
+            try {
+                mappedFileFirst = this.mappedFiles.get(0);
+            } catch (IndexOutOfBoundsException e) {
+                //ignore
+            } catch (Exception e) {
+                log.error("getFirstMappedFile has exception.", e);
+            }
+        }
+
+        return mappedFileFirst;
+    }
 
     /**
      * 刷新数据到磁盘中
@@ -78,20 +93,13 @@ public class MappedFileQueue {
         return result;
     }
 
-    public MappedFile getFirstMappedFile() {
-        MappedFile mappedFileFirst = null;
-
-        if (!this.mappedFiles.isEmpty()) {
-            try {
-                mappedFileFirst = this.mappedFiles.get(0);
-            } catch (IndexOutOfBoundsException e) {
-                //ignore
-            } catch (Exception e) {
-                log.error("getFirstMappedFile has exception.", e);
-            }
-        }
-
-        return mappedFileFirst;
+    /**
+     * 提交最少的页（一页4k）
+     * @param commitLeastPages 默认为4页
+     * @return
+     */
+    public boolean commit(final int commitLeastPages){
+        return true;
     }
 
     /**
