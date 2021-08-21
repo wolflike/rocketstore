@@ -7,7 +7,6 @@ import communication.netty.NettyRemotingClient;
 import communication.protocol.RemotingCommand;
 import message.Message;
 
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author 28293
@@ -57,6 +56,8 @@ public class MQClientAPIImpl {
             final long timeoutMillis,
             final RemotingCommand request
     ){
+        //todo
+        remotingClient.invokeSync(addr,request,timeoutMillis);
         return null;
     }
     private void sendMessageAsync(
@@ -69,7 +70,10 @@ public class MQClientAPIImpl {
             final MQClientInstance instance,
             final DefaultMQProducerImpl producer
     ){
+        remotingClient.invokeAsync(addr,request,timeoutMillis,(responseFuture) ->{
 
+            //todo operationComplete
+        });
     }
 
 
