@@ -52,7 +52,8 @@ public class CommitLog {
     private final AppendMessageCallback appendMessageCallback;
 
     public CommitLog(DefaultMessageStore defaultMessageStore) {
-        this.mappedFileQueue = null;
+        this.mappedFileQueue = new MappedFileQueue(MessageStoreConfig.getStorePathCommitLog(),
+                MessageStoreConfig.defaultMappedFileSize, defaultMessageStore.getAllocateMappedFileService());
         this.defaultMessageStore = defaultMessageStore;
         this.appendMessageCallback = new DefaultAppendMessageCallback(MessageStoreConfig.messageSize);
         if (FlushDiskType.SYNC_FLUSH == MessageStoreConfig.getFlushDiskType()) {
@@ -87,7 +88,7 @@ public class CommitLog {
         //这里会有多线程执行putMessage
         //这里就是多个线程根据topic-queueId的维度进行写入数据
 
-        MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile();
+        MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(0);
         AppendMessageResult result;
         putMessageLock.lock();
         try {
@@ -230,6 +231,8 @@ public class CommitLog {
 
     /**
      * 异步刷新
+     * 异步和同步的本质是进行同步刷新时，是需要等待结果的
+     * 异步刷新只需要唤醒去刷新磁盘的线程即可
      */
     class FlushRealTimeService extends FlushCommitLogService{
 
@@ -445,13 +448,18 @@ public class CommitLog {
             msgStoreItemMemory.putInt(msg.getReconsumeTimes());
             //body
             msgStoreItemMemory.putInt(bodyLength);
-            msgStoreItemMemory.put(msg.getBody());
+            if(bodyLength > 0){
+                msgStoreItemMemory.put(msg.getBody());
+            }
             //topic
             msgStoreItemMemory.put((byte) topicLength);
             msgStoreItemMemory.put(topicData);
             //properties
             msgStoreItemMemory.putShort((short) propertiesLength);
-            msgStoreItemMemory.put(propertiesData);
+            if(propertiesLength >0){
+                msgStoreItemMemory.put(propertiesData);
+            }
+
 
             final long beginTimeMills = System.currentTimeMillis();
 

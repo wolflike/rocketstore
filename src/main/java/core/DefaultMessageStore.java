@@ -1,5 +1,6 @@
 package core;
 
+import lombok.Getter;
 import message.Message;
 import message.MessageExtBrokerInner;
 import result.GetMessageResult;
@@ -32,12 +33,19 @@ public class DefaultMessageStore implements MessageStore {
 
     private final LinkedList<CommitLogDispatcher> dispatcherList;
 
+    private final AllocateMappedFileService allocateMappedFileService;
+
 
 
     public DefaultMessageStore() {
+
+        allocateMappedFileService = new AllocateMappedFileService(this);
         this.consumeQueueTable = new ConcurrentHashMap<>();
         this.commitLog = new CommitLog(this);
         this.reputMessageService = new RePutMessageService();
+
+        allocateMappedFileService.start();
+
         dispatcherList = new LinkedList<>();
         //这里就不写索引了，直接写consumeQueue算了
         this.dispatcherList.addLast(new CommitLogDispatcherBuildConsumeQueue());
@@ -50,8 +58,8 @@ public class DefaultMessageStore implements MessageStore {
 
     @Override
     public void start(){
+        commitLog.start();
         reputMessageService.start();
-
     }
 
     @Override
@@ -62,6 +70,10 @@ public class DefaultMessageStore implements MessageStore {
     @Override
     public void destroy() {
 
+    }
+
+    public AllocateMappedFileService getAllocateMappedFileService() {
+        return allocateMappedFileService;
     }
 
     @Override

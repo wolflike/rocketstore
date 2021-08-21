@@ -1,5 +1,6 @@
 package message;
 
+import common.MessageConst;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -23,8 +24,19 @@ public class Message implements Serializable {
     private Map<String, String> properties;
     private byte[] body;
 
+    public Message(String topic, String tags, byte[] body) {
+        this.topic = topic;
+        this.body = body;
+        if(tags !=null && tags.length()>0){
+            setTags(tags);
+        }
+    }
+    public void setTags(String tags){
+        putProperty(MessageConst.propertyTags,tags);
+    }
+
     public String getTags() {
-        return this.getProperty("TAGS");
+        return this.getProperty(MessageConst.propertyTags);
     }
     public String getProperty(final String name) {
         if (null == this.properties) {
@@ -32,5 +44,12 @@ public class Message implements Serializable {
         }
 
         return this.properties.get(name);
+    }
+
+    void putProperty(final String name,final String value){
+        if(null == properties){
+            properties = new HashMap<>();
+        }
+        properties.put(name,value);
     }
 }

@@ -9,7 +9,9 @@ import message.MessageExtBrokerInner;
 import result.AppendMessageResult;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -87,6 +89,8 @@ public class MappedFile {
      */
     private volatile long storeTimestamp = 0;
 
+    private boolean firstCreateInQueue = false;
+
     public MappedFile(final String fileName, final int fileSize) {
         init(fileName, fileSize);
     }
@@ -109,8 +113,38 @@ public class MappedFile {
         this.fileSize = fileSize;
         this.file = new File(fileName);
         this.fileFromOffset = Long.parseLong(this.file.getName());
+
+        boolean ok = false;
+
+        ensureDirOK(file.getParent());
+
+        try {
+            fileChannel = new RandomAccessFile(file,"rw").getChannel();
+            mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_WRITE,0,fileSize);
+            ok = true;
+        } catch (FileNotFoundException e) {
+            log.error("Failed to create file " + this.fileName, e);
+        } catch (IOException e){
+            log.error("Failed to map file " + this.fileName, e);
+        }finally {
+            if(!ok && fileChannel != null){
+                try {
+                    fileChannel.close();
+                } catch (IOException e) {
+                    log.error("Failed to close file " + this.fileName, e);
+                }
+            }
+        }
     }
 
+    public static void ensureDirOK(final String dirName){
+        if(dirName !=null){
+            File f = new File(dirName);
+            if(!f.exists()){
+                boolean result = f.mkdirs();
+            }
+        }
+    }
     /**
      * 这个方法的本质都是把数据写到byteBuffer中
      * @param msg
@@ -216,7 +250,7 @@ public class MappedFile {
         return 0;
     }
     public boolean isFull(){
-        return true;
+        return this.fileSize == wrotePosition.get();
     }
 
 }

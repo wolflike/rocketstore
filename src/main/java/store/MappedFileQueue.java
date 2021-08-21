@@ -1,10 +1,12 @@
 package store;
 
+import core.AllocateMappedFileService;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import store.MappedFile;
+import utils.UtilAll;
 
+import java.io.File;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -20,7 +22,9 @@ public class MappedFileQueue {
 
     private final int mappedFileSize;
 
-    private final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<MappedFile>();
+    private final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<>();
+
+    private final AllocateMappedFileService allocateMappedFileService;
 
     private long flushedWhere = 0;
     private long committedWhere = 0;
@@ -28,9 +32,60 @@ public class MappedFileQueue {
     private volatile long storeTimestamp = 0;
 
 
-    public MappedFileQueue(String storePath, int mappedFileSize) {
+    public MappedFileQueue(String storePath, int mappedFileSize, AllocateMappedFileService allocateMappedFileService) {
         this.storePath = storePath;
         this.mappedFileSize = mappedFileSize;
+        this.allocateMappedFileService = allocateMappedFileService;
+    }
+
+    /**
+     *如何获取不到mappedFile需要生成mappedFile
+     * @param startOffset
+     * @param needCreate
+     * @return
+     */
+    public MappedFile getLastMappedFile(final long startOffset, boolean needCreate){
+        long createOffset = -1;
+        MappedFile mappedFileLast = getLastMappedFile();
+
+        //如果最后一个mappedFile都没有，说明队列就没有mappedFile
+        //所以就从startOffset着手
+        if(mappedFileLast == null){
+            createOffset = startOffset - (startOffset % this.mappedFileSize);
+        }
+
+        if(mappedFileLast !=null && mappedFileLast.isFull()){
+            createOffset = mappedFileLast.getFileFromOffset() + this.mappedFileSize;
+        }
+
+        if(createOffset!=-1&&needCreate){
+            String nextFilePath = this.storePath + File.separator + UtilAll.offset2FileName(createOffset);
+            String nextNextFilePath = this.storePath + File.separator +
+                    UtilAll.offset2FileName(createOffset+mappedFileSize);
+            MappedFile mappedFile = null;
+
+            //创建mappedFile是系统调用，是可能出错的
+            //todo 需要做异常处理
+            if(allocateMappedFileService !=null){
+                mappedFile = allocateMappedFileService.putRequestAndReturnMappedFile(nextFilePath,nextNextFilePath,mappedFileSize);
+            }else{
+                mappedFile = new MappedFile(nextFilePath,mappedFileSize);
+            }
+
+            if(mappedFile!=null){
+                if(mappedFiles.isEmpty()){
+                    mappedFile.setFirstCreateInQueue(true);
+                }
+                mappedFiles.add(mappedFile);
+            }
+
+            return mappedFile;
+        }
+
+        return mappedFileLast;
+    }
+    public MappedFile getLastMappedFile(final long startOffset){
+        return getLastMappedFile(startOffset,true);
     }
 
     public MappedFile getLastMappedFile(){

@@ -1,6 +1,7 @@
 package client;
 
 import core.DefaultMessageStore;
+import core.MessageStore;
 import core.MessageStoreConfig;
 import message.MessageExt;
 import message.MessageExtBrokerInner;
@@ -39,7 +40,11 @@ import java.util.Map;
  */
 public class Engine {
 
-    private DefaultMessageStore store;
+    private MessageStore store;
+
+    public Engine(){
+        store = new DefaultMessageStore();
+    }
 
 
     /**
@@ -78,6 +83,7 @@ public class Engine {
         MessageExtBrokerInner message = new MessageExtBrokerInner();
         message.setTopic(topic);
         message.setQueueId(queueId);
+        message.setBody(data.array());
         PutMessageResult putMessageResult = store.putMessage(message);
         return putMessageResult.getAppendMessageResult().getLogicsOffset();
     }

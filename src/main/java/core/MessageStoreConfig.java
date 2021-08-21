@@ -22,6 +22,8 @@ public class MessageStoreConfig {
 
     public static int syncCommitTimeout = 2_000;
 
+    public static int defaultMappedFileSize = 1024*1024*1024;
+
     /**
      * How many pages are to be flushed when flush CommitLog
      */

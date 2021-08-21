@@ -9,6 +9,9 @@ Message协议
 - topic 前一个字节存放topic名称能容大小，后存放了topic的内容 1+topicLength 256B
 - properties 前2个字节（short）存放属性值大小，后存放propertiesLength大小的属性数据 2+propertiesLength 64KB
 
+- write流程时序图
+![write](./images/write.jpg)
+
 
 
 

@@ -1,6 +1,5 @@
 package core;
 
-import core.DefaultMessageStore;
 import store.MappedFile;
 import store.MappedFileQueue;
 
@@ -36,7 +35,7 @@ public class ConsumeQueue {
                 + File.separator + topic
                 + File.separator + queueId;
 
-        this.mappedFileQueue = new MappedFileQueue(queueDir, mappedFileSize);
+        this.mappedFileQueue = new MappedFileQueue(queueDir, mappedFileSize, defaultMessageStore.getAllocateMappedFileService());
     }
 
     /**
