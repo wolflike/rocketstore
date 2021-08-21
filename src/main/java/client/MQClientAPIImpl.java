@@ -1,11 +1,17 @@
 package client;
 
 import client.result.SendResult;
+import com.sun.deploy.config.ClientConfig;
 import communication.CommunicationMode;
 import communication.RemotingClient;
+import communication.netty.NettyClientConfig;
 import communication.netty.NettyRemotingClient;
+import communication.netty.ResponseFuture;
 import communication.protocol.RemotingCommand;
+import io.netty.channel.Channel;
 import message.Message;
+
+import java.net.SocketAddress;
 
 
 /**
@@ -15,8 +21,8 @@ public class MQClientAPIImpl {
 
     private final RemotingClient remotingClient;
 
-    public MQClientAPIImpl() {
-        this.remotingClient = new NettyRemotingClient();
+    public MQClientAPIImpl(final NettyClientConfig nettyClientConfig) {
+        this.remotingClient = new NettyRemotingClient(nettyClientConfig,null);
 
     }
 
@@ -57,7 +63,8 @@ public class MQClientAPIImpl {
             final RemotingCommand request
     ){
         //todo
-        remotingClient.invokeSync(addr,request,timeoutMillis);
+        RemotingCommand response = remotingClient.invokeSync(addr, request, timeoutMillis);
+
         return null;
     }
     private void sendMessageAsync(
