@@ -12,6 +12,9 @@ Message协议
 - write流程时序图
 ![write](./images/write.jpg)
 
+- topic元数据交互示意图
+![topic](./images/data.png)
+
 
 
 
